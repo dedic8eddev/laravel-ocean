@@ -1,0 +1,287 @@
+openapi: 3.0.0
+info:
+  title: ORCA OCEAN API
+  description: The API for the ORCA ocean application
+  version: 0.0.1
+servers:
+  - url: /
+    description: The base server path.
+paths:
+  /shipyards:
+    get:
+      summary: GET shipyards list
+      tags:
+        - Shipyards
+      responses:
+        200:
+          description: List of shipyards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Shipyard'
+    post:
+      summary: Create shipyard
+      tags:
+        - Shipyards
+      requestBody:
+        content:
+          application/json:
+            $ref: '#/components/schemas/Shipyard'
+      responses:
+        201:
+          description: The created shipyard
+    put:
+      summary: Update shipyard
+      tags:
+        - Shipyards
+      requestBody:
+        $ref: '#/components/schemas/Shipyard'
+  /cargoes:
+    get:
+      summary: Get cargoes list
+      tags:
+        - Cargoes
+      responses:
+        200:
+          description: List of cargoes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Cargo'
+    post:
+      summary: Create cargo
+      tags:
+        - Cargoes
+      requestBody:
+        content:
+          application/json:
+            $ref: '#/components/requestBodies/Cargo'
+      responses:
+        201:
+          description: Created cargo
+    put:
+      summary: Update cargo
+      tags:
+        - Cargoes
+      requestBody:
+        $ref: '#/components/requestBodies/Cargo'
+      responses:
+        200:
+          description: Updated cargo
+  /countries:
+    get:
+      summary: GET countries list
+      tags:
+        - Countries
+      responses:
+        200:
+          description: List of countries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Shipyard'
+
+  /organizations:
+    get:
+      summary: GET organization list
+      tags:
+        - Organizations
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+        - in: query
+          name: domain
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        200:
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+  /ports:
+      get:
+        summary: Get port list
+        tags:
+          - Ports
+        responses:
+          200:
+            description: List of ports
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Port'
+      post:
+        summary: Create port
+        tags:
+          - Ports
+        requestBody:
+          content:
+            application/json:
+              $ref: '#/components/requestBodies/Port'
+        responses:
+          201:
+            description: Created port
+      put:
+        summary: Update port
+        tags:
+          - Ports
+        requestBody:
+          $ref: '#/components/requestBodies/Port'
+        responses:
+          200:
+            description: Updated port
+
+components:
+  requestBodies:
+    Cargo:
+      description: The request body needed to create/update cargo.
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Cargo'
+              - type: object
+                properties:
+                  organization_ids:
+                    type: array
+                    items:
+                      type: integer
+    Port:
+      description: The request body needed to create/update port.
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Port'
+              - type: object
+                properties:
+                  organization_ids:
+                    type: array
+                    items:
+                      type: integer
+  schemas:
+    Shipyard:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        area:
+          type: string
+        lat:
+          type: number
+        lon:
+          type: number
+        updated_by_organization:
+          type: boolean
+        hidden:
+          type: boolean
+    Cargo:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        stowage_factor_bale:
+          type: number
+        stowage_factor_grain:
+          type: number
+        stowage_factor_unit_id:
+          type: integer
+        updated_by_organization:
+          type: boolean
+        hidden:
+          type: boolean
+    Port:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        code:
+          type: string
+        country_code:
+          type: string
+        type:
+          type: string
+        size:
+          type: string
+        lat:
+          type: number
+        lon:
+          type: number
+        timezone:
+          type: string
+        updated_by_organization:
+          type: boolean
+        hidden:
+          type: boolean
+    Country:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+        name:
+          type: string
+    Organization:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        uuid:
+          type: string
+        name:
+          type: string
+        domain:
+          type: string
+        schema:
+          type: string
+        active:
+          type: boolean

@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Task Definition template with parametrized environment variables
+Parameters:
+  ProjectName:
+    Type: String
+    Default: orca
+  ProjectSuffix:
+    Type: String
+  TaskReason:
+    Type: String
+    Default: web
+    AllowedValues:
+      - web
+      - worker
+  Environment:
+    Type: String
+    Default: stage
+    AllowedValues:
+      - dev
+      - stage
+      - prod
+    Description: The environment to set for
+  ContainerCpu:
+    Type: Number
+    Default: 256
+    Description: How much CPU to give the container. 1024 is 1 CPU
+  ContainerMemory:
+    Type: Number
+    Default: 512
+    Description: How much memory in megabytes to give the container
+  DesiredCount:
+    Type: Number
+    Default: 2
+    Description: How many copies of the service task to run
+
+Conditions:
+  AddWorkerCommandInContainer: !Equals [ !Ref TaskReason, worker ]
+Mappings:
+  EnvVars:
+    APP-ENV:
+      dev: 'development'
+      stage: 'staging'
+      prod: 'production'
+    APP-DEBUG:
+      dev: 'true'
+      stage: 'true'
+      prod: 'false'
+    QUEUE-CONNECTION:
+      dev: 'sync'
+      stage: 'sqs'
+      prod: 'sqs'
+    APPARATUS-EMAIL-URL:
+      dev: 'http://localhost/login/:apparatus:'
+      stage: 'https://orca.stage.webthatmatters.com/login/:apparatus:'
+      prod: 'https://orca.tools/login/:apparatus:'
+    AWS-BUCKET:
+      dev: 'orca-development'
+      stage: 'orca-stage'
+      prod: 'orca-prod'
+    DB-DATABASE:
+      dev: 'orca_api'
+      stage: 'orca_api_stage'
+      prod: 'core'
+    DOCKS-DB-DATABASE:
+      dev: 'orca_api'
+      stage: 'orca_docks_stage'
+      prod: 'docks'
+    AWS-DEFAULT-REGION:
+      dev: 'eu-west-1'
+      stage: 'eu-west-1'
+      prod: 'eu-west-1'
+  EnvSecrets:
+    SSM-PREFIX:
+      dev: 'arn:aws:ssm:eu-west-1:742659675016:parameter/'
+      stage: 'arn:aws:ssm:eu-west-1:742659675016:parameter/'
+      prod: 'arn:aws:ssm:eu-west-1:742659675016:parameter/'
+    APP-KEY:
+      dev: 'cross-project.APP_KEY'
+      stage: 'cross-project.APP_KEY'
+      prod: 'orca.core.APP_KEY'
+    AWS-ACCESS-KEY-ID:
+      dev: 'cross-project.IAM.key'
+      stage: 'cross-project.IAM.key'
+      prod: 'orca.IAM.key'
+    AWS-SECRET-ACCESS-KEY:
+      dev: 'cross-project.IAM.secret'
+      stage: 'cross-project.IAM.secret'
+      prod: 'orca.IAM.secret'
+    DB-HOST:
+      dev: 'devocker.pgsql'
+      stage: 'postgresql-cross-project.DB_HOST'
+      prod: 'orca.postgresql.DB_HOST'
+    DB-PASSWORD:
+      dev: 'devocker'
+      stage: 'postgresql-cross-project.DB_PASSWORD'
+      prod: 'orca.postgresql.DB_PASSWORD'
+    DB-USERNAME:
+      dev: 'devocker'
+      stage: 'postgresql-cross-project.DB_USERNAME'
+      prod: 'orca.postgresql.DB_USERNAME'
+    DOCKS-DB-HOST:
+      dev: 'devocker.pgsql'
+      stage: 'postgresql-cross-project.DB_HOST'
+      prod: 'orca.postgresql.DB_HOST'
+    DOCKS-DB-PASSWORD:
+      dev: 'devocker'
+      stage: 'postgresql-cross-project.DB_PASSWORD'
+      prod: 'orca.postgresql.DB_PASSWORD'
+    DOCKS-DB-USERNAME:
+      dev: 'devocker'
+      stage: 'postgresql-cross-project.DB_USERNAME'
+      prod: 'orca.postgresql.DB_USERNAME'
+    SQS-PREFIX:
+      dev: 'cross-project.SQS_PREFIX'
+      stage: 'cross-project.SQS_PREFIX'
+      prod: 'cross-project.SQS_PREFIX'
+    JWT-KEY:
+      dev: 'cross-project.JWT_KEY'
+      stage: 'cross-project.JWT_KEY'
+      prod: 'orca.auth.JWT_KEY'
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['/',['/ecs',!Ref 'ProjectName',!Ref 'Environment',!Ref 'ProjectSuffix',!Ref TaskReason]]
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    UpdateReplacePolicy: Retain
+    DependsOn: LogGroup
+    Properties:
+      Family: !Join ['-',[!Ref 'ProjectName', !Ref 'Environment',!Ref 'ProjectSuffix',!Ref TaskReason]]
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref 'ContainerCpu'
+      Memory: !Ref 'ContainerMemory'
+      ExecutionRoleArn: 'arn:aws:iam::742659675016:role/ecsTaskExecutionRole'
+      ContainerDefinitions:
+        - Name: base
+          Cpu: !Ref 'ContainerCpu'
+          Memory: !Ref 'ContainerMemory'
+          Image: !Join ['',['742659675016.dkr.ecr.eu-west-1.amazonaws.com/',!Ref 'ProjectName','/',!Ref 'ProjectSuffix',':', !Ref 'Environment']]
+          WorkingDirectory: /app
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+          PortMappings:
+            - HostPort: 80
+              Protocol: tcp
+              ContainerPort: 80
+          Command: !If
+            - AddWorkerCommandInContainer
+            -
+              - php
+              - /app/artisan
+              - queue:listen
+            - Ref: AWS::NoValue
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost/ || exit 1
+            Retries: 3
+            Timeout: 5
+            Interval: 300
+            StartPeriod: 60
+
+          Environment:
+            - Name: APP_NAME
+              Value: !Ref 'ProjectName'
+            - Name: APP_ENV
+              Value: !FindInMap [EnvVars,APP-ENV,!Ref 'Environment']
+            - Name: APP_LOG
+              Value: errorlog
+            - Name: APP_LOG_LEVEL
+              Value: debug
+            - Name: APP_DEBUG
+              Value: !FindInMap [EnvVars,APP-DEBUG,!Ref 'Environment']
+            - Name: APP_URL
+              Value: http://localhost
+
+            - Name: DB_CONNECTION
+              Value: core
+            - Name: DB_DATABASE
+              Value: !FindInMap [EnvVars,DB-DATABASE,!Ref 'Environment']
+
+            - Name: DOCKS_DB_CONNECTION
+              Value: postgres
+            - Name: DOCKS_DB_DATABASE
+              Value: !FindInMap [EnvVars,DOCKS-DB-DATABASE,!Ref 'Environment']
+
+            - Name: AWS_BUCKET
+              Value: !FindInMap [EnvVars,AWS-BUCKET,!Ref 'Environment']
+            - Name: AWS_DEFAULT_REGION
+              Value: !FindInMap [EnvVars,AWS-DEFAULT-REGION,!Ref 'Environment']
+
+            - Name: QUEUE_CONNECTION
+              Value: !FindInMap [EnvVars,QUEUE-CONNECTION,!Ref 'Environment']
+            - Name: SQS_QUEUE
+              Value: !Join ['-',[!Ref 'ProjectName', !Ref 'Environment',!Ref 'ProjectSuffix']]
+
+            - Name: BUGSNAG_API_KEY
+              Value: 5d17e15c586a0952446682d7a94117c0
+          Secrets:
+            - Name: APP_KEY
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,APP-KEY,!Ref 'Environment']]]
+
+            - Name: AWS_ACCESS_KEY_ID
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,AWS-ACCESS-KEY-ID,!Ref 'Environment']]]
+            - Name: AWS_SECRET_ACCESS_KEY
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,AWS-SECRET-ACCESS-KEY,!Ref 'Environment']]]
+            
+            - Name: JWT_KEY
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,JWT-KEY,!Ref 'Environment']]]
+
+            - Name: DB_HOST
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DB-HOST,!Ref 'Environment']]]
+            - Name: DB_PASSWORD
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DB-PASSWORD,!Ref 'Environment']]]
+            - Name: DB_USERNAME
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DB-USERNAME,!Ref 'Environment']]]
+
+            - Name: DOCKS_DB_HOST
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DOCKS-DB-HOST,!Ref 'Environment']]]
+            - Name: DOCKS_DB_PASSWORD
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DOCKS-DB-PASSWORD,!Ref 'Environment']]]
+            - Name: DOCKS_DB_USERNAME
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,DOCKS-DB-USERNAME,!Ref 'Environment']]]
+
+            - Name: SQS_PREFIX
+              ValueFrom: !Join ['',[!FindInMap [EnvSecrets,SSM-PREFIX,!Ref 'Environment'],!FindInMap [EnvSecrets,SQS-PREFIX,!Ref 'Environment']]]
+Outputs:
+  TaskDefinition:
+    Description: The task definition reference
+    Value: !Ref TaskDefinition
+    Export:
+      Name: !Join ['-',[!Ref ProjectName, !Ref Environment, !Ref ProjectSuffix, task-definition, !Ref TaskReason]]

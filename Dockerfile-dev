@@ -1,0 +1,20 @@
+FROM php:7.3.5-apache-stretch
+
+RUN apt-get update \
+ && apt-get install -y libxml2-dev libpq-dev zlib1g-dev libzip-dev unzip
+
+RUN  docker-php-ext-install xml zip mbstring pdo pdo_pgsql bcmath \
+    && pecl install xdebug \
+    && docker-php-ext-enable xdebug \
+    && echo "xdebug.remote_enable=on" >> /usr/local/etc/php/conf.d/xdebug.ini \
+    && echo "xdebug.remote_autostart=off" >> /usr/local/etc/php/conf.d/xdebug.ini
+
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/bin/ --filename=composer
+
+ENV APACHE_DOCUMENT_ROOT /app/public
+
+RUN a2enmod rewrite && sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
+    && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+
+WORKDIR /app
+
